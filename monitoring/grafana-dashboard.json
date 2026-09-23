@@ -1,0 +1,53 @@
+{
+  "title": "SparrowX Reporting API",
+  "uid": "sparrowx-reporting-api",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": {"from": "now-1h", "to": "now"},
+  "templating": {"list": []},
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Request rate",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [{"expr": "sum(rate(reporting_api_http_requests_total{job=\"reporting-api\"}[5m]))", "legendFormat": "requests/s", "refId": "A"}]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Error rate",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [{"expr": "sum(rate(reporting_api_http_requests_total{job=\"reporting-api\",status=~\"5..\"}[5m]))", "legendFormat": "5xx/s", "refId": "A"}]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Latency p95",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (rate(reporting_api_http_request_duration_seconds_bucket{job=\"reporting-api\"}[5m])))", "legendFormat": "p95 seconds", "refId": "A"}]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "HTTP status codes",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "targets": [{"expr": "sum by (status) (rate(reporting_api_http_requests_total{job=\"reporting-api\"}[5m]))", "legendFormat": "{{status}}", "refId": "A"}]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Process up",
+      "gridPos": {"h": 5, "w": 8, "x": 0, "y": 16},
+      "targets": [{"expr": "up{job=\"reporting-api\"}", "legendFormat": "up", "refId": "A"}]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Report requests",
+      "gridPos": {"h": 8, "w": 16, "x": 8, "y": 16},
+      "targets": [{"expr": "sum by (report) (rate(reporting_api_report_requests_total{job=\"reporting-api\"}[5m]))", "legendFormat": "{{report}}", "refId": "A"}]
+    }
+  ]
+}
