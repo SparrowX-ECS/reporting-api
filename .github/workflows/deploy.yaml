@@ -1,0 +1,223 @@
+name: Reporting API CI/CD
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: eu-west-1
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest
+
+  build:
+    name: Build
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout application
+        uses: actions/checkout@v4
+
+      - name: Install yq
+        uses: mikefarah/yq@v4.48.2
+
+      - name: Load image configuration
+        run: echo "ECR_REPOSITORY=$(yq -r '.image.repository' ecs-parameters.yaml)" >> "$GITHUB_ENV"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/cloudformation-github-actions
+          aws-region: eu-west-1
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Check whether image exists in ECR
+        id: image
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          set +e
+          describe_output=$(aws ecr describe-images \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids "imageTag=$IMAGE_TAG" \
+            --region "$AWS_REGION" 2>&1)
+          describe_status=$?
+          set -e
+
+          if [ "$describe_status" -eq 0 ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Image already exists; skipping build and push."
+          elif grep -q "ImageNotFoundException" <<< "$describe_output"; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Image does not exist; it will be built and pushed."
+          else
+            echo "$describe_output"
+            exit "$describe_status"
+          fi
+
+      - name: Build Docker image
+        if: steps.image.outputs.exists != 'true'
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: docker build -t "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" .
+
+      - name: Push Docker image
+        if: steps.image.outputs.exists != 'true'
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: docker push "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+      - name: Add build summary
+        if: always()
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          {
+            echo "## Reporting API build"
+            echo
+            echo "| Item | Value |"
+            echo "|---|---|"
+            echo "| ECR repository | `$ECR_REPOSITORY` |"
+            echo "| Image tag | `$IMAGE_TAG` |"
+            echo "| Image existed before build | `${{ steps.image.outputs.exists || 'unknown' }}` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Deploy
+    needs: [test, build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout application
+        uses: actions/checkout@v4
+
+      - name: Install yq
+        uses: mikefarah/yq@v4.48.2
+
+      - name: Load service configuration
+        run: |
+          echo "ENVIRONMENT_NAME=$(yq -r '.environment.name' ecs-parameters.yaml)" >> "$GITHUB_ENV"
+          echo "SERVICE_NAME=$(yq -r '.service.name' ecs-parameters.yaml)" >> "$GITHUB_ENV"
+          echo "STACK_NAME=$(yq -r '.service.stack' ecs-parameters.yaml)" >> "$GITHUB_ENV"
+          echo "ECR_REPOSITORY=$(yq -r '.image.repository' ecs-parameters.yaml)" >> "$GITHUB_ENV"
+          echo "CONTAINER_PORT=$(yq -r '.container.port' ecs-parameters.yaml)" >> "$GITHUB_ENV"
+          echo "CPU=$(yq -r '.container.cpu' ecs-parameters.yaml)" >> "$GITHUB_ENV"
+          echo "MEMORY=$(yq -r '.container.memory' ecs-parameters.yaml)" >> "$GITHUB_ENV"
+          echo "DESIRED_COUNT=$(yq -r '.deployment.desiredCount' ecs-parameters.yaml)" >> "$GITHUB_ENV"
+          echo "PATH_PATTERN=$(yq -r '.loadBalancer.pathPattern' ecs-parameters.yaml)" >> "$GITHUB_ENV"
+          echo "LISTENER_PRIORITY=$(yq -r '.loadBalancer.listenerRulePriority' ecs-parameters.yaml)" >> "$GITHUB_ENV"
+          echo "HEALTH_CHECK_PATH=$(yq -r '.loadBalancer.healthCheckPath' ecs-parameters.yaml)" >> "$GITHUB_ENV"
+          echo "CUSTOMER_API_URL=$(yq -r '.upstream.customerApiUrl' ecs-parameters.yaml)" >> "$GITHUB_ENV"
+          echo "TASK_API_URL=$(yq -r '.upstream.taskApiUrl' ecs-parameters.yaml)" >> "$GITHUB_ENV"
+          echo "BILLING_API_URL=$(yq -r '.upstream.billingApiUrl' ecs-parameters.yaml)" >> "$GITHUB_ENV"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/cloudformation-github-actions
+          aws-region: eu-west-1
+
+      - name: Checkout infrastructure repository
+        uses: actions/checkout@v4
+        with:
+          repository: SparrowX-ECS/ecs-infrastructure
+          ref: main
+          path: ecs-infrastructure
+
+      - name: Deploy ECS service
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          aws cloudformation deploy \
+            --region "$AWS_REGION" \
+            --stack-name "$STACK_NAME" \
+            --template-file ecs-infrastructure/cloudformation/service.yaml \
+            --parameter-overrides \
+              "EnvironmentName=$ENVIRONMENT_NAME" \
+              "ServiceName=$SERVICE_NAME" \
+              "ImageTag=$IMAGE_TAG" \
+              "ContainerPort=$CONTAINER_PORT" \
+              "Cpu=$CPU" \
+              "Memory=$MEMORY" \
+              "DesiredCount=$DESIRED_COUNT" \
+              "PathPattern=$PATH_PATTERN" \
+              "ListenerRulePriority=$LISTENER_PRIORITY" \
+              "HealthCheckPath=$HEALTH_CHECK_PATH" \
+              "CustomerApiUrl=$CUSTOMER_API_URL" \
+              "TaskApiUrl=$TASK_API_URL" \
+              "BillingApiUrl=$BILLING_API_URL" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset
+
+      - name: Add deployment summary
+        if: always()
+        run: |
+          {
+            echo "## Reporting API deployment"
+            echo
+            echo "| Item | Value |"
+            echo "|---|---|"
+            echo "| Stack | `$STACK_NAME` |"
+            echo "| Region | `$AWS_REGION` |"
+            echo "| Image tag | `${{ github.sha }}` |"
+            echo
+            echo "### CloudFormation outputs"
+            echo
+            echo '```text'
+            aws cloudformation describe-stacks \
+              --region "$AWS_REGION" \
+              --stack-name "$STACK_NAME" \
+              --query 'Stacks[0].Outputs[*].[OutputKey,OutputValue]' \
+              --output table || true
+            echo '```'
+            echo
+            echo "### Recent stack events"
+            echo
+            echo '```text'
+            aws cloudformation describe-stack-events \
+              --region "$AWS_REGION" \
+              --stack-name "$STACK_NAME" \
+              --query 'StackEvents[0:10].[Timestamp,LogicalResourceId,ResourceStatus,ResourceStatusReason]' \
+              --output table || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

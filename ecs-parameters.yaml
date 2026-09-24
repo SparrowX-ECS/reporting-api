@@ -1,0 +1,31 @@
+environment:
+  name: sparrowx
+
+service:
+  name: reporting-api
+  stack: sparrowx-reporting-api
+
+image:
+  repository: reporting-api
+
+container:
+  port: 8000
+  cpu: 256
+  memory: 512
+
+deployment:
+  desiredCount: 1
+
+loadBalancer:
+  pathPattern: /api/reporting/*
+  listenerRulePriority: 140
+  healthCheckPath: /health
+
+database:
+  enabled: false
+
+upstream:
+  customerApiUrl: http://customer-api:8000
+  taskApiUrl: http://task-api:8000
+  billingApiUrl: http://billing-api:8000
+  timeoutSeconds: 5
