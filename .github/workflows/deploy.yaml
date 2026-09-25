@@ -4,9 +4,20 @@ on:
   pull_request:
     branches:
       - main
+    paths:
+        - 'src/**'
+        - 'Dockerfile'
+        - 'ecs-parameters.yaml'
+        - '.github/workflows/deploy.yaml'
+
   push:
     branches:
       - main
+    paths:
+        - 'src/**'
+        - 'Dockerfile'
+        - 'ecs-parameters.yaml'
+        - '.github/workflows/deploy.yaml'
 
 permissions:
   contents: read
@@ -15,8 +26,32 @@ env:
   AWS_REGION: eu-west-1
 
 jobs:
+  changes:
+      runs-on: ubuntu-latest
+      outputs:
+        code: ${{ steps.filter.outputs.code }}
+        deploy: ${{ steps.filter.outputs.deploy }}
+
+      steps:
+        - uses: actions/checkout@v4
+
+        - uses: dorny/paths-filter@v3
+          id: filter
+          with:
+            filters: |
+              code:
+                - 'src/**'
+                - 'Dockerfile'
+              deploy:
+                - 'src/**'
+                - 'Dockerfile'
+                - 'ecs-parameters.yaml'
+                - '.github/workflows/deploy.yaml'
+
   test:
     name: Test
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -36,8 +71,12 @@ jobs:
 
   build:
     name: Build
-    needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [changes, test]
+    if: |
+      needs.changes.outputs.code == 'true' &&
+      needs.test.result == 'success' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     permissions:
@@ -119,8 +158,14 @@ jobs:
 
   deploy:
     name: Deploy
-    needs: [test, build]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [changes, test, build]
+    if: |
+      always() &&
+      needs.changes.outputs.deploy == 'true' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      (needs.test.result == 'success' || needs.test.result == 'skipped') &&
+      (needs.build.result == 'success' || needs.build.result == 'skipped')
     runs-on: ubuntu-latest
 
     permissions:
@@ -163,29 +208,35 @@ jobs:
           repository: SparrowX-ECS/ecs-infrastructure
           ref: main
           path: ecs-infrastructure
-
+      
       - name: Deploy ECS service
         env:
           IMAGE_TAG: ${{ github.sha }}
         run: |
+          parameters=(
+            "EnvironmentName=$ENVIRONMENT_NAME"
+            "ServiceName=$SERVICE_NAME"
+            "ContainerPort=$CONTAINER_PORT"
+            "Cpu=$CPU"
+            "Memory=$MEMORY"
+            "DesiredCount=$DESIRED_COUNT"
+            "PathPattern=$PATH_PATTERN"
+            "ListenerRulePriority=$LISTENER_PRIORITY"
+            "HealthCheckPath=$HEALTH_CHECK_PATH"
+            "CustomerApiUrl=$CUSTOMER_API_URL"
+            "TaskApiUrl=$TASK_API_URL"
+            "BillingApiUrl=$BILLING_API_URL"
+          )
+
+          if [[ "${{ needs.changes.outputs.code }}" == "true" ]]; then
+            parameters+=("ImageTag=${GITHUB_SHA}")
+          fi
+
           aws cloudformation deploy \
             --region "$AWS_REGION" \
             --stack-name "$STACK_NAME" \
             --template-file ecs-infrastructure/cloudformation/service.yaml \
-            --parameter-overrides \
-              "EnvironmentName=$ENVIRONMENT_NAME" \
-              "ServiceName=$SERVICE_NAME" \
-              "ImageTag=$IMAGE_TAG" \
-              "ContainerPort=$CONTAINER_PORT" \
-              "Cpu=$CPU" \
-              "Memory=$MEMORY" \
-              "DesiredCount=$DESIRED_COUNT" \
-              "PathPattern=$PATH_PATTERN" \
-              "ListenerRulePriority=$LISTENER_PRIORITY" \
-              "HealthCheckPath=$HEALTH_CHECK_PATH" \
-              "CustomerApiUrl=$CUSTOMER_API_URL" \
-              "TaskApiUrl=$TASK_API_URL" \
-              "BillingApiUrl=$BILLING_API_URL" \
+            --parameter-overrides "${parameters[@]}" \
             --capabilities CAPABILITY_NAMED_IAM \
             --no-fail-on-empty-changeset
 
