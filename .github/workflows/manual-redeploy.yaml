@@ -11,113 +11,15 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 env:
   AWS_REGION: eu-west-1
-
+    
 jobs:
   redeploy:
-    name: Re-Deploy
-    if: github.event.inputs.confirmation == 'REDEPLOY'
-    runs-on: ubuntu-latest
-
-    permissions:
-      contents: read
-      id-token: write
-
-    steps:
-      - name: Checkout application
-        uses: actions/checkout@v4
-
-      - name: Install yq
-        uses: mikefarah/yq@v4.48.2
-
-      - name: Load service configuration
-        run: |
-          echo "ENVIRONMENT_NAME=$(yq -r '.environment.name' ecs-parameters.yaml)" >> "$GITHUB_ENV"
-          echo "SERVICE_NAME=$(yq -r '.service.name' ecs-parameters.yaml)" >> "$GITHUB_ENV"
-          echo "STACK_NAME=$(yq -r '.service.stack' ecs-parameters.yaml)" >> "$GITHUB_ENV"
-          echo "ECR_REPOSITORY=$(yq -r '.image.repository' ecs-parameters.yaml)" >> "$GITHUB_ENV"
-          echo "CONTAINER_PORT=$(yq -r '.container.port' ecs-parameters.yaml)" >> "$GITHUB_ENV"
-          echo "CPU=$(yq -r '.container.cpu' ecs-parameters.yaml)" >> "$GITHUB_ENV"
-          echo "MEMORY=$(yq -r '.container.memory' ecs-parameters.yaml)" >> "$GITHUB_ENV"
-          echo "DESIRED_COUNT=$(yq -r '.deployment.desiredCount' ecs-parameters.yaml)" >> "$GITHUB_ENV"
-          echo "PATH_PATTERN=$(yq -r '.loadBalancer.pathPattern' ecs-parameters.yaml)" >> "$GITHUB_ENV"
-          echo "LISTENER_PRIORITY=$(yq -r '.loadBalancer.listenerRulePriority' ecs-parameters.yaml)" >> "$GITHUB_ENV"
-          echo "HEALTH_CHECK_PATH=$(yq -r '.loadBalancer.healthCheckPath' ecs-parameters.yaml)" >> "$GITHUB_ENV"
-          echo "CUSTOMER_API_URL=$(yq -r '.upstream.customerApiUrl' ecs-parameters.yaml)" >> "$GITHUB_ENV"
-          echo "TASK_API_URL=$(yq -r '.upstream.taskApiUrl' ecs-parameters.yaml)" >> "$GITHUB_ENV"
-          echo "BILLING_API_URL=$(yq -r '.upstream.billingApiUrl' ecs-parameters.yaml)" >> "$GITHUB_ENV"
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/cloudformation-github-actions
-          aws-region: eu-west-1
-
-      - name: Checkout infrastructure repository
-        uses: actions/checkout@v4
-        with:
-          repository: SparrowX-ECS/ecs-infrastructure
-          ref: main
-          path: ecs-infrastructure
-
-      - name: Deploy ECS service
-        env:
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          parameters=(
-            "EnvironmentName=$ENVIRONMENT_NAME"
-            "ServiceName=$SERVICE_NAME"
-            "ContainerPort=$CONTAINER_PORT"
-            "Cpu=$CPU"
-            "Memory=$MEMORY"
-            "DesiredCount=$DESIRED_COUNT"
-            "PathPattern=$PATH_PATTERN"
-            "ListenerRulePriority=$LISTENER_PRIORITY"
-            "HealthCheckPath=$HEALTH_CHECK_PATH"
-            "CustomerApiUrl=$CUSTOMER_API_URL"
-            "TaskApiUrl=$TASK_API_URL"
-            "BillingApiUrl=$BILLING_API_URL"
-          )
-
-          aws cloudformation deploy \
-            --region "$AWS_REGION" \
-            --stack-name "$STACK_NAME" \
-            --template-file ecs-infrastructure/cloudformation/service.yaml \
-            --parameter-overrides "${parameters[@]}" \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --no-fail-on-empty-changeset
-
-      - name: Add deployment summary
-        if: always()
-        run: |
-          {
-            echo "## Reporting API deployment"
-            echo
-            echo "| Item | Value |"
-            echo "|---|---|"
-            echo "| Stack | `$STACK_NAME` |"
-            echo "| Region | `$AWS_REGION` |"
-            echo "| Image tag | `${{ github.sha }}` |"
-            echo
-            echo "### CloudFormation outputs"
-            echo
-            echo '```text'
-            aws cloudformation describe-stacks \
-              --region "$AWS_REGION" \
-              --stack-name "$STACK_NAME" \
-              --query 'Stacks[0].Outputs[*].[OutputKey,OutputValue]' \
-              --output table || true
-            echo '```'
-            echo
-            echo "### Recent stack events"
-            echo
-            echo '```text'
-            aws cloudformation describe-stack-events \
-              --region "$AWS_REGION" \
-              --stack-name "$STACK_NAME" \
-              --query 'StackEvents[0:10].[Timestamp,LogicalResourceId,ResourceStatus,ResourceStatusReason]' \
-              --output table || true
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/deploy.yaml@v1.0.2
+    with:
+      database-enabled: false
+      update-image: false
+      job-name: Re-Deploy
