@@ -10,6 +10,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_
 
 from src.config import Settings
 from src.routes.reports import create_router
+from src.routes.health import router as health_router
 
 
 http_requests_total = Counter(
@@ -61,19 +62,14 @@ def create_app(settings: Settings | None = None, client: httpx.AsyncClient | Non
         http_request_duration_seconds.labels(request.method, request.url.path).observe(time.perf_counter() - started)
         return response
 
-    @application.get("/health", tags=["system"])
-    async def health() -> dict[str, str]:
-        return {"status": "ok"}
-
-    @application.get("/api/reporting/health", tags=["system"])
-    async def api_health() -> dict[str, str]:
-        return {"status": "ok"}
-
     @application.get("/metrics", include_in_schema=False)
     async def metrics() -> Response:
         return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
+    application.include_router(health_router)
+    
     application.include_router(create_router(app_settings, managed_client))
+    
     return application
 
 
