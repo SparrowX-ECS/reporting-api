@@ -1,0 +1,65 @@
+name: Manual Rollback Production To Selected Image Tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type ROLLBACK to confirm Rolling back the Production image
+        required: true
+        type: string
+      image-tag:
+        description: The tag of the image to rollback to
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+    
+jobs:
+  confirm-rollback:
+    name: Confirm Production Rollback
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate confirmation
+        if: inputs.confirmation != 'ROLLBACK'
+        run: |
+          echo "Invalid confirmation."
+          echo "You must type ROLLBACK to continue."
+          exit 1
+
+  # Promoting Image to Production Deployment
+  rollback:
+    name: Production Rollback
+    needs: [confirm-rollback]
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/deploy.yaml@v4.3.0
+    with:
+      environment: prod
+      database-enabled: false
+      env-params-file: ecs-parameters-prod.yaml
+      image-tag: ${{ inputs.image-tag }}
+
+
+  # Run smoke tests against the deployed service.
+  smoke-test:
+    name: Smoke Test Production
+    needs: rollback
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/smoke-test.yaml@v4.3.0
+    with:
+      env-params-file: ecs-parameters-prod.yaml
+      base-url: ${{ vars.PROD_BASE_URL }}
+      timeout: '120'
+
+  # Publish Image metadata only if deployment and smoke tests are successful
+  # Image will be marked as candidate for promotion to production
+  publish-image-metadata:
+    name: Publish Image Metadata
+    needs: [smoke-test]
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/publish-image-metadata.yaml@v4.3.0
+    with:
+      ssm-parameter-path: ${{ vars.PROD_DEPLOYED_PARAM_STORE_PATH }}
+      env-params-file: ecs-parameters-prod.yaml
+      image-tag: ${{ inputs.image-tag }}

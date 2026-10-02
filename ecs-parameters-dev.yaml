@@ -1,0 +1,32 @@
+project:
+  name: sparrowx
+  environment: dev
+
+service:
+  name: reporting-api
+
+image:
+  nameSpace: sparrowx/dev
+  repository: reportingapi
+
+container:
+  port: 8000
+  size: micro
+
+deployment:
+  desiredCount: 1
+
+loadBalancer:
+  pathPattern: /api/reporting/*
+  listenerRulePriority: 140
+  healthCheckPath: /health
+  smokeTestPath: /api/reporting/health
+
+database:
+  enabled: false
+
+upstream:
+  customerApiUrl: http://customer-api:8000
+  taskApiUrl: http://task-api:8000
+  billingApiUrl: http://billing-api:8000
+  timeoutSeconds: 5

@@ -1,17 +1,17 @@
-environment:
+project:
   name: sparrowx
+  environment: prod
 
 service:
   name: reporting-api
-  stack: sparrowx-reporting-api
 
 image:
-  repository: reporting-api
+  nameSpace: sparrowx/prod
+  repository: reportingapi
 
 container:
   port: 8000
-  cpu: 256
-  memory: 512
+  size: micro
 
 deployment:
   desiredCount: 1
@@ -20,6 +20,7 @@ loadBalancer:
   pathPattern: /api/reporting/*
   listenerRulePriority: 140
   healthCheckPath: /health
+  smokeTestPath: /api/reporting/health
 
 database:
   enabled: false

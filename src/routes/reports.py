@@ -55,12 +55,12 @@ def create_router(settings: Settings, client: httpx.AsyncClient) -> APIRouter:
 
     async def customer_report() -> CustomerReport:
         report_requests_total.labels("customers").inc()
-        customers = await fetch_list(client, settings.customer_api_url, "/api/customer/", "Customer")
+        customers = await fetch_list(client, settings.customer_api_url, "/api/customers/", "Customer")
         return CustomerReport(customers=len(customers))
 
     async def task_report() -> TaskReport:
         report_requests_total.labels("tasks").inc()
-        tasks = await fetch_list(client, settings.task_api_url, "/api/task/", "Task")
+        tasks = await fetch_list(client, settings.task_api_url, "/api/tasks/", "Task")
         return TaskReport(open_tasks=count_open_tasks(tasks))
 
     async def billing_report() -> BillingReport:

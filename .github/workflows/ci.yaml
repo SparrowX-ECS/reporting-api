@@ -1,0 +1,71 @@
+name: CI Pipeline
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+    branches:
+      - main
+    paths:
+        - 'src/**'
+        - 'tests/**'
+        - 'Dockerfile'
+        - 'ecs-parameters-dev.yaml'
+        - '.github/workflows/ci.yaml'
+        - '.github/workflows/deploy-dev.yaml'
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  
+jobs:
+  pre-build:
+    name: Pre-Build
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/pre-build.yaml@v4.3.0
+    with:
+      env-params-file: ecs-parameters-dev.yaml
+
+  test:
+    name: Test
+    needs: pre-build
+    if: needs.pre-build.outputs.build-needed == 'true'
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/test.yaml@v4.3.0
+    with:
+      runtime: python
+      database: false
+  
+  #Add SAST Job Here, To Scan Source Code for Vulnerabilities, For Better Security Measures
+
+  build:
+    name: Build
+    needs: [pre-build, test]
+    if: |
+        needs.test.result == 'success' &&
+        needs.pre-build.outputs.build-needed == 'true'
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/build.yaml@v4.3.0
+    with:
+      env-params-file: ecs-parameters-dev.yaml
+
+  security-scan:
+    name: Security Scan
+    needs: build
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/security-scan.yaml@v4.3.0
+    with:
+      env-params-file: ecs-parameters-dev.yaml
+      image-tag: ${{ needs.build.outputs.image-tag }}
+
+  #Publish Image metadata only if the security scan is successful
+  publish-image-metadata:
+    name: Publish Image Metadata
+    needs: [security-scan, build]
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/publish-image-metadata.yaml@v4.3.0
+    with:
+      ssm-parameter-path: ${{ vars.DEV_DEPLOYED_PARAM_STORE_PATH }}
+      env-params-file: ecs-parameters-dev.yaml
+      image-tag: ${{ needs.build.outputs.image-tag }}
