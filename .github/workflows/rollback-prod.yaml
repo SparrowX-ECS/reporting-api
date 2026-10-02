@@ -35,7 +35,7 @@ jobs:
   rollback:
     name: Production Rollback
     needs: [confirm-rollback]
-    uses: SparrowX-ECS/workflows-templates/.github/workflows/deploy.yaml@v4.3.0
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/deploy.yaml@v4.4.0
     with:
       environment: prod
       database-enabled: false
@@ -47,7 +47,7 @@ jobs:
   smoke-test:
     name: Smoke Test Production
     needs: rollback
-    uses: SparrowX-ECS/workflows-templates/.github/workflows/smoke-test.yaml@v4.3.0
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/smoke-test.yaml@v4.4.0
     with:
       env-params-file: ecs-parameters-prod.yaml
       base-url: ${{ vars.PROD_BASE_URL }}
@@ -58,7 +58,7 @@ jobs:
   publish-image-metadata:
     name: Publish Image Metadata
     needs: [smoke-test]
-    uses: SparrowX-ECS/workflows-templates/.github/workflows/publish-image-metadata.yaml@v4.3.0
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/publish-image-metadata.yaml@v4.4.0
     with:
       ssm-parameter-path: ${{ vars.PROD_DEPLOYED_PARAM_STORE_PATH }}
       env-params-file: ecs-parameters-prod.yaml
