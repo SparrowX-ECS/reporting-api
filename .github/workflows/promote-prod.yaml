@@ -34,7 +34,7 @@ jobs:
   resolve-image:
     name: Resolve Candidate Image
     needs: confirm-promotion
-    uses: SparrowX-ECS/workflows-templates/.github/workflows/resolve-image.yaml@v4.4.0
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/resolve-image.yaml@v4.4.1
     with:
       ssm-parameter-path: ${{ vars.PROD_CANDIDATE_PARAM_STORE_PATH }}
       env-params-file: ecs-parameters-dev.yaml
@@ -43,7 +43,7 @@ jobs:
   copy-image:
     name: Copy Image to Production ECR
     needs: resolve-image
-    uses: SparrowX-ECS/workflows-templates/.github/workflows/copy-image.yaml@v4.4.0
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/copy-image.yaml@v4.4.1
     with:
       image-tag: ${{ needs.resolve-image.outputs.image-tag }}
       image-digest: ${{ needs.resolve-image.outputs.image-digest }}
@@ -54,7 +54,7 @@ jobs:
   promote:
     name: Promote to Production
     needs: [resolve-image, copy-image]
-    uses: SparrowX-ECS/workflows-templates/.github/workflows/deploy.yaml@v4.4.0
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/deploy.yaml@v4.4.1
     with:
       environment: prod
       database-enabled: false
@@ -66,7 +66,7 @@ jobs:
   smoke-test:
     name: Smoke Test Production
     needs: promote
-    uses: SparrowX-ECS/workflows-templates/.github/workflows/smoke-test.yaml@v4.4.0
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/smoke-test.yaml@v4.4.1
     with:
       env-params-file: ecs-parameters-prod.yaml
       base-url: ${{ vars.PROD_BASE_URL }}
@@ -77,7 +77,7 @@ jobs:
   publish-image-metadata:
     name: Publish Image Metadata
     needs: [smoke-test, resolve-image]
-    uses: SparrowX-ECS/workflows-templates/.github/workflows/publish-image-metadata.yaml@v4.4.0
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/publish-image-metadata.yaml@v4.4.1
     with:
       ssm-parameter-path: ${{ vars.PROD_DEPLOYED_PARAM_STORE_PATH }}
       env-params-file: ecs-parameters-prod.yaml
