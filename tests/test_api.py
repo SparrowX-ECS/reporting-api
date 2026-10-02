@@ -56,7 +56,7 @@ def test_each_report_endpoint_and_summary(settings):
     assert request(app, "GET", "/api/reporting/tasks").json() == {"open_tasks": 2}
     assert request(app, "GET", "/api/reporting/billing").json() == {"pending_invoices": 1}
     assert request(app, "GET", "/api/reporting/summary").json() == {"customers": 2, "open_tasks": 2, "pending_invoices": 1}
-    assert set(upstream.calls) == {"http://customer/api/customer/", "http://task/api/task/", "http://billing/api/billing/"}
+    assert set(upstream.calls) == {"http://customer/api/customers/", "http://task/api/tasks/", "http://billing/api/billing/"}
 
 
 def test_upstream_timeout_returns_504(settings):
