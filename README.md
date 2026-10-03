@@ -1,59 +1,96 @@
-# SparrowX Labs Reporting API
+# Reporting API
 
-The read-only Reporting API is owned by Noah Taylor (Analytics Team). It aggregates operational statistics from the Customer, Task, and Billing APIs over internal ECS Service Connect HTTP and has no database of its own.
+Read-only aggregation service for the fictional SparrowX SaaS platform. This stateless demonstration workload shows internal backend-to-backend traffic: it calls `customer-api`, `task-api`, and `billing-api` through ECS Service Connect and combines their responses into reports.
 
-## API contract
+## Service responsibilities
 
-| Method | Path | Response |
+- Aggregate customer, task, and billing information.
+- Demonstrate private service-to-service communication.
+- Expose health, smoke-test, and Prometheus-compatible metrics endpoints.
+- Run without a database of its own.
+
+## API documentation
+
+FastAPI documentation is available at `/docs` (Swagger UI), `/redoc` (ReDoc), and `/openapi.json` (OpenAPI schema). The main API prefix is `/api/reporting`:
+
+| Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/reporting/customers` | `{ "customers": 1240 }` |
-| `GET` | `/api/reporting/tasks` | `{ "open_tasks": 87 }` |
-| `GET` | `/api/reporting/billing` | `{ "pending_invoices": 31 }` |
-| `GET` | `/api/reporting/summary` | The three fields above combined |
+| `GET` | `/api/reporting/customers` | Customer summary |
+| `GET` | `/api/reporting/tasks` | Open-task summary |
+| `GET` | `/api/reporting/billing` | Pending-invoice summary |
+| `GET` | `/api/reporting/summary` | Combined report |
+| `GET` | `/health` | Container/target-group health check |
+| `GET` | `/api/reporting/health` | API smoke-test health check |
+| `GET` | `/metrics` | Prometheus metrics |
 
-Open tasks are `TODO` and `IN_PROGRESS`; pending invoices are `PENDING`. Upstream timeout errors return `504`; other upstream failures or invalid responses return `502`.
+## Runtime environment variables
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `CUSTOMER_API_URL` | No | Base URL for Customer API; defaults to `http://localhost:8001`. In ECS, Service Connect supplies `http://customer-api:8000`. |
+| `TASK_API_URL` | No | Base URL for Task API; defaults to `http://localhost:8002`. In ECS, Service Connect supplies `http://task-api:8000`. |
+| `BILLING_API_URL` | No | Base URL for Billing API; defaults to `http://localhost:8003`. In ECS, Service Connect supplies `http://billing-api:8000`. |
+| `UPSTREAM_TIMEOUT_SECONDS` | No | Timeout for upstream calls; defaults to `5` seconds and must be greater than `0` and no more than `60`. |
+| `CORS_ALLOW_ORIGINS` | No | Comma-separated browser origins; defaults to local development origins. |
 
 ## Local development
 
-From this directory:
-
 ```bash
-python3.12 -m venv .venv
-source .venv/bin/activate
 python -m pip install -r requirements-dev.txt
-pytest -q
-uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+pytest
+uvicorn src.main:app --reload --port 8000
 ```
 
-The service is independently runnable for `/health`, `/docs`, `/openapi.json`, and `/metrics`. Report calls require the upstream APIs unless their HTTP calls are mocked in tests.
+Set the three upstream URLs to locally running services, then open <http://localhost:8000/docs>.
 
-## Configuration and endpoints
+## CI/CD cycle
 
-The defaults assume Customer API on `http://localhost:8001`, Task API on `http://localhost:8002`, and Billing API on `http://localhost:8003`. Override them with `CUSTOMER_API_URL`, `TASK_API_URL`, and `BILLING_API_URL`. `UPSTREAM_TIMEOUT_SECONDS` defaults to `5`.
+Pull requests run Python tests without PostgreSQL, build one immutable commit-SHA image, scan it with Trivy, and publish metadata. A merge to `main` resolves the image, deploys it to `dev`, runs the reporting smoke test, and publishes its tag and digest as the production candidate.
 
-```bash
-CUSTOMER_API_URL=http://customer-api:8000 \
-TASK_API_URL=http://task-api:8000 \
-BILLING_API_URL=http://billing-api:8000 \
-uvicorn src.main:app --host 0.0.0.0 --port 8000
-```
+The manually confirmed production workflow verifies the candidate digest, copies the same image from `dev` ECR to `prod` ECR, deploys it, smoke-tests it, and publishes production metadata. The service follows **Build Once, Promote Many** and is not rebuilt for production.
 
-- OpenAPI UI: <http://localhost:8000/docs>
-- OpenAPI JSON: <http://localhost:8000/openapi.json>
-- Health: `GET /health` returns `{"status":"ok"}`
-- Metrics: <http://localhost:8000/metrics>
+## Environments and deployment tracking
 
-The importable Grafana example is `monitoring/grafana-dashboard.json`; it assumes Prometheus uses the `job="reporting-api"` label.
+`dev` deploys automatically from `main`; `prod` is promoted manually after development validation. Each environment has separate ECS resources, ECR namespace, upstream configuration, parameter file, URL, SSM metadata path, and GitHub deployment history. See [`ecs-parameters-dev.yaml`](ecs-parameters-dev.yaml) and [`ecs-parameters-prod.yaml`](ecs-parameters-prod.yaml).
 
-## Docker
+## Rollback options
 
-```bash
-docker build -t reporting-api .
-docker run --rm -p 8000:8000 \
-  -e CUSTOMER_API_URL=http://customer-api:8000 \
-  -e TASK_API_URL=http://task-api:8000 \
-  -e BILLING_API_URL=http://billing-api:8000 \
-  reporting-api
-```
+### Git revert
 
-The image runs as a non-root user. In ECS, the service names resolve through Service Connect; the ALB is used only for external ingress.
+Revert the problematic source or deployment configuration commit and merge it. The normal pipeline will validate and deploy the corrective commit.
+
+### Quicker manual image rollback
+
+1. Open **Deployments**, select the `prod` environment, and open the desired previous deployment.
+2. Copy the deployed image tag.
+3. Open **Actions → Manual Rollback Production To Selected Image Tag → Run workflow**.
+4. Enter `ROLLBACK`, paste the image tag, and run the workflow.
+
+The selected immutable image is redeployed and smoke-tested without rebuilding. ECS deployment circuit-breaker rollback is also enabled.
+
+## Repository variables
+
+| Variable | Description |
+| --- | --- |
+| `AWS_ACCOUNT_ID` | AWS account containing the ECS platform and ECR repositories. |
+| `AWS_REGION` | AWS region used by the workflows. |
+| `AWS_ROLE_NAME` | IAM role assumed through GitHub OIDC. |
+| `DEV_BASE_URL` | Development smoke-test origin with protocol and domain only. |
+| `DEV_DEPLOYED_PARAM_STORE_PATH` | SSM path for the last successful `dev` image. |
+| `PROD_BASE_URL` | Production smoke-test origin with protocol and domain only. |
+| `PROD_CANDIDATE_PARAM_STORE_PATH` | SSM path for the production candidate image. |
+| `PROD_DEPLOYED_PARAM_STORE_PATH` | SSM path for the last successful `prod` image. |
+
+The smoke-test workflow appends `/api/reporting/health` from the selected parameter file to the base URL.
+
+## Container and deployment configuration
+
+- Container port: `8000`.
+- ALB path: `/api/reporting/*`.
+- Health check: `/health`.
+- Smoke-test path: `/api/reporting/health`.
+- Database: disabled; upstream services are reached through Service Connect.
+
+## License
+
+This is a proprietary portfolio project. It is publicly viewable but not open source. All rights are reserved. See [LICENSE.md](LICENSE.md).
