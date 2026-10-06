@@ -28,12 +28,23 @@ jobs:
           echo "You must type PROMOTE to continue."
           exit 1
 
+  deployment-guard:
+    name: Deployment Guard
+    needs: confirm-promotion
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/deployment-guard.yaml@v4.5.2
+    with:
+      env-params-file: ecs-parameters-prod.yaml
+      environment: prod
+
   # Resolve the candidate image tag and digest from paramstore
   # The Job has an internal validation logic, which will be run against the image on the dev ECR repo, 
   # before copying it to the prod ECR repo. This is to ensure consistency.
   resolve-image:
     name: Resolve Candidate Image
-    needs: confirm-promotion
+    needs: 
+      - confirm-promotion
+      - deployment-guard
+    if: needs.deployment-guard.outputs.deployment-enabled == 'true'
     uses: SparrowX-ECS/workflows-templates/.github/workflows/resolve-image.yaml@v4.4.1
     with:
       ssm-parameter-path: ${{ vars.PROD_CANDIDATE_PARAM_STORE_PATH }}

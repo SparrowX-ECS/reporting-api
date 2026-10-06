@@ -19,8 +19,17 @@ env:
   AWS_REGION: ${{ vars.AWS_REGION }}
 
 jobs:
+  deployment-guard:
+    name: Deployment Guard
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/deployment-guard.yaml@v4.5.2
+    with:
+      env-params-file: ecs-parameters-dev.yaml
+      environment: dev
+
   resolve-image:
     name: Resolve Candidate Image
+    needs: deployment-guard
+    if: needs.deployment-guard.outputs.deployment-enabled == 'true'
     uses: SparrowX-ECS/workflows-templates/.github/workflows/resolve-image.yaml@v4.4.1
     with:
       ssm-parameter-path: ${{ vars.DEV_DEPLOYED_PARAM_STORE_PATH }}

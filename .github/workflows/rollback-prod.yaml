@@ -31,10 +31,21 @@ jobs:
           echo "You must type ROLLBACK to continue."
           exit 1
 
+  deployment-guard:
+    name: Deployment Guard
+    needs: confirm-rollback
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/deployment-guard.yaml@v4.5.2
+    with:
+      env-params-file: ecs-parameters-prod.yaml
+      environment: prod
+
   # Promoting Image to Production Deployment
   rollback:
     name: Production Rollback
-    needs: [confirm-rollback]
+    needs: 
+      - confirm-rollback
+      - deployment-guard
+    if: needs.deployment-guard.outputs.deployment-enabled == 'true'
     uses: SparrowX-ECS/workflows-templates/.github/workflows/deploy.yaml@v4.4.1
     with:
       environment: prod
