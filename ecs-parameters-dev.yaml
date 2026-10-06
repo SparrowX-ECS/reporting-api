@@ -2,6 +2,9 @@ project:
   name: sparrowx
   environment: dev
 
+appStack:
+  state: disabled
+  
 service:
   name: reporting-api
 
