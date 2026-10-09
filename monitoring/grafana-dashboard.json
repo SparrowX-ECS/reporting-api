@@ -1,53 +1,101 @@
 {
-  "title": "SparrowX Reporting API",
-  "uid": "sparrowx-reporting-api",
-  "schemaVersion": 39,
-  "version": 1,
-  "refresh": "10s",
-  "time": {"from": "now-1h", "to": "now"},
-  "templating": {"list": []},
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
   "panels": [
     {
-      "id": 1,
-      "type": "timeseries",
-      "title": "Request rate",
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
-      "targets": [{"expr": "sum(rate(reporting_api_http_requests_total{job=\"reporting-api\"}[5m]))", "legendFormat": "requests/s", "refId": "A"}]
+      "id": 1,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [{"expr": "sum(rate(reporting_api_http_requests_total[5m]))", "legendFormat": "requests/sec", "refId": "A"}],
+      "title": "Request rate",
+      "type": "timeseries"
     },
     {
-      "id": 2,
-      "type": "timeseries",
-      "title": "Error rate",
+      "fieldConfig": {"defaults": {"unit": "percentunit"}, "overrides": []},
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
-      "targets": [{"expr": "sum(rate(reporting_api_http_requests_total{job=\"reporting-api\",status=~\"5..\"}[5m]))", "legendFormat": "5xx/s", "refId": "A"}]
+      "id": 2,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [{"expr": "sum(rate(reporting_api_http_requests_total{status=~\"4..|5..\"}[5m])) / clamp_min(sum(rate(reporting_api_http_requests_total[5m])), 1e-9)", "legendFormat": "error ratio", "refId": "A"}],
+      "title": "Error ratio",
+      "type": "timeseries"
     },
     {
-      "id": 3,
-      "type": "timeseries",
-      "title": "Latency p95",
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
-      "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (rate(reporting_api_http_request_duration_seconds_bucket{job=\"reporting-api\"}[5m])))", "legendFormat": "p95 seconds", "refId": "A"}]
+      "id": 3,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "histogram_quantile(0.95, sum by (le) (rate(reporting_api_http_request_duration_seconds_bucket[5m])))", "legendFormat": "p95", "refId": "A"},
+        {"expr": "histogram_quantile(0.50, sum by (le) (rate(reporting_api_http_request_duration_seconds_bucket[5m])))", "legendFormat": "p50", "refId": "B"}
+      ],
+      "title": "Request latency",
+      "type": "timeseries"
     },
     {
-      "id": 4,
-      "type": "timeseries",
-      "title": "HTTP status codes",
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
-      "targets": [{"expr": "sum by (status) (rate(reporting_api_http_requests_total{job=\"reporting-api\"}[5m]))", "legendFormat": "{{status}}", "refId": "A"}]
+      "id": 4,
+      "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [{"expr": "sum by (status) (rate(reporting_api_http_requests_total[5m]))", "legendFormat": "HTTP {{status}}", "refId": "A"}],
+      "title": "HTTP status rate",
+      "type": "timeseries"
     },
     {
+      "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "red"}, {"color": "green", "value": 1}]}}, "overrides": []},
+      "gridPos": {"h": 5, "w": 6, "x": 0, "y": 16},
       "id": 5,
-      "type": "stat",
-      "title": "Process up",
-      "gridPos": {"h": 5, "w": 8, "x": 0, "y": 16},
-      "targets": [{"expr": "up{job=\"reporting-api\"}", "legendFormat": "up", "refId": "A"}]
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"expr": "max(up{service=\"reporting-api\"})", "legendFormat": "up", "refId": "A"}],
+      "title": "Reporting API up",
+      "type": "stat"
     },
     {
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 18, "x": 6, "y": 16},
       "id": 6,
-      "type": "timeseries",
+      "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [{"expr": "sum by (report) (rate(reporting_api_report_requests_total[5m]))", "legendFormat": "{{report}}", "refId": "A"}],
       "title": "Report requests",
-      "gridPos": {"h": 8, "w": 16, "x": 8, "y": 16},
-      "targets": [{"expr": "sum by (report) (rate(reporting_api_report_requests_total{job=\"reporting-api\"}[5m]))", "legendFormat": "{{report}}", "refId": "A"}]
+      "type": "timeseries"
+    },
+    {
+      "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 8, "x": 0, "y": 24},
+      "id": 7,
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"expr": "sum(process_resident_memory_bytes{service=\"reporting-api\"})", "legendFormat": "resident memory", "refId": "A"}],
+      "title": "Process resident memory",
+      "type": "stat"
+    },
+    {
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 8, "x": 8, "y": 24},
+      "id": 8,
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"expr": "time() - max(process_start_time_seconds{service=\"reporting-api\"})", "legendFormat": "uptime", "refId": "A"}],
+      "title": "Process uptime",
+      "type": "stat"
+    },
+    {
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 29},
+      "id": 9,
+      "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [{"expr": "sum by (path) (rate(reporting_api_http_requests_total[5m]))", "legendFormat": "{{path}}", "refId": "A"}],
+      "title": "Request rate by path",
+      "type": "timeseries"
     }
-  ]
+  ],
+  "refresh": "15s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["sparrowx", "reporting-api"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "timezone": "browser",
+  "title": "SparrowX Reporting API",
+  "uid": "sparrowx-reporting-api",
+  "version": 2
 }
