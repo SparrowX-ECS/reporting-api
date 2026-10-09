@@ -1,16 +1,14 @@
 name: Automated Deployment to Development
 
 on:
-  push:
+  workflow_run:
+    workflows:
+      - CI Pipeline
+    types:
+      - completed
     branches:
       - main
-    paths:
-          - 'src/**'
-          - 'tests/**'
-          - 'Dockerfile'
-          - 'ecs-parameters-dev.yaml'
-          - '.github/workflows/deploy-dev.yaml'
-          
+
 permissions:
   contents: read
   id-token: write
@@ -21,7 +19,8 @@ env:
 jobs:
   deployment-guard:
     name: Deployment Guard
-    uses: SparrowX-ECS/workflows-templates/.github/workflows/deployment-guard.yaml@v4.5.2
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/deployment-guard.yaml@v5.1.0
     with:
       env-params-file: ecs-parameters-dev.yaml
       environment: dev
@@ -30,42 +29,82 @@ jobs:
     name: Resolve Candidate Image
     needs: deployment-guard
     if: needs.deployment-guard.outputs.deployment-enabled == 'true'
-    uses: SparrowX-ECS/workflows-templates/.github/workflows/resolve-image.yaml@v4.4.1
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/resolve-image.yaml@v5.1.0
     with:
       ssm-parameter-path: ${{ vars.DEV_DEPLOYED_PARAM_STORE_PATH }}
       env-params-file: ecs-parameters-dev.yaml
 
+  verify-image-signature:
+    name: Verify Image Signature
+    needs: resolve-image
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/verify-image-signature.yaml@v5.1.0
+    with:
+      image-uri: ${{ needs.resolve-image.outputs.image-uri }}
+    
   deploy:
     name: Deploy to Development
-    needs: resolve-image
-    uses: SparrowX-ECS/workflows-templates/.github/workflows/deploy.yaml@v4.4.1
+    needs:
+      - resolve-image
+      - verify-image-signature
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/deploy.yaml@v5.1.0
     with:
       environment: dev
       database-enabled: false
       env-params-file: ecs-parameters-dev.yaml
       image-tag: ${{ needs.resolve-image.outputs.image-tag }}
 
-
   # Run smoke tests against the deployed service.
   smoke-test:
     name: Smoke Test Development
     needs: deploy
-    uses: SparrowX-ECS/workflows-templates/.github/workflows/smoke-test.yaml@v4.4.1
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/smoke-test.yaml@v5.1.0
     with:
       env-params-file: ecs-parameters-dev.yaml
       base-url: ${{ vars.DEV_BASE_URL }}
       timeout: '120'
 
-  
-  #Add DAST Job Here, To Scan Application in RunTime for Vulnerabilities, For Better Security Measures
+  api-test:
+    name: Full Development API Tests
+    needs: smoke-test
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/api-test.yaml@v5.1.0
+    with:
+      runtime: python
+      base-url: ${{ vars.DEV_BASE_URL }}
+      test-path: api-tests/dev
+      test-command: pytest -q api-tests/dev
+      requirements-file: requirements-dev.txt
 
-  # Publish Image metadata only if deployment and smoke tests are successful
+  dast:
+    name: Dynamic Application Security Scan
+    needs: deploy
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/dast.yaml@v5.1.0
+    with:
+      runtime: python
+      base-url: ${{ vars.DEV_BASE_URL }}
+
+  dev-quality-gate:
+    name: Dev Quality Gate
+    needs:
+      - smoke-test
+      - api-test
+      - dast
+    if: always()
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/dev-quality-gate.yaml@v5.1.0
+    with:
+      dast-artifact: ${{ needs.dast.outputs.artifact-name }}
+      security-policy-file: app-sec-policy.yaml
+      smoke-test-status: ${{ needs.smoke-test.outputs.status }}
+      api-test-status: ${{ needs.api-test.outputs.status }}
+      api-test-blocking: false
+
+  # Publish Image metadata only if dev quality gate is passed
   # Image will be marked as candidate for promotion to production
   publish-image-metadata:
     name: Publish Image Metadata
-    needs: [smoke-test, resolve-image]
-    uses: SparrowX-ECS/workflows-templates/.github/workflows/publish-image-metadata.yaml@v4.4.1
+    needs: [dev-quality-gate, api-test, resolve-image]
+    uses: SparrowX-ECS/workflows-templates/.github/workflows/publish-image-metadata.yaml@v5.1.0
     with:
       ssm-parameter-path: ${{ vars.PROD_CANDIDATE_PARAM_STORE_PATH }}
       env-params-file: ecs-parameters-dev.yaml
       image-tag: ${{ needs.resolve-image.outputs.image-tag }}
+      image-uri: ${{ needs.resolve-image.outputs.image-uri }}

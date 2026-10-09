@@ -3,7 +3,7 @@ project:
   environment: dev
 
 appStack:
-  state: disabled
+  state: enabled
   
 service:
   name: reporting-api
