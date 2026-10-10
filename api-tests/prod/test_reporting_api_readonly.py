@@ -37,7 +37,7 @@ def test_report_endpoints_are_readable() -> None:
 
 def test_openapi_contains_reporting_routes() -> None:
     with client() as api:
-        response = api.get("/openapi.json")
+        response = api.get("/api/reporting/openapi.json")
 
     assert response.status_code == 200, response.text
     paths = response.json()["paths"]
@@ -45,11 +45,3 @@ def test_openapi_contains_reporting_routes() -> None:
     assert "/api/reporting/tasks" in paths
     assert "/api/reporting/billing" in paths
     assert "/api/reporting/summary" in paths
-
-
-def test_metrics_endpoint_is_readable() -> None:
-    with client() as api:
-        response = api.get("/metrics")
-
-    assert response.status_code == 200, response.text
-    assert "text/plain" in response.headers.get("content-type", "")

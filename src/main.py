@@ -53,6 +53,19 @@ def create_app(settings: Settings | None = None, client: httpx.AsyncClient | Non
     application.state.settings = app_settings
 
     @application.middleware("http")
+    async def security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Permissions-Policy"] = "camera=(), geolocation=(), microphone=()"
+
+        forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+        if forwarded_proto == "https":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
+    @application.middleware("http")
     async def metrics_middleware(request: Request, call_next):
         if request.url.path == "/metrics":
             return await call_next(request)
@@ -65,6 +78,10 @@ def create_app(settings: Settings | None = None, client: httpx.AsyncClient | Non
     @application.get("/metrics", include_in_schema=False)
     async def metrics() -> Response:
         return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+    @application.get("/api/reporting/openapi.json", include_in_schema=False)
+    async def reporting_openapi() -> dict[str, Any]:
+        return application.openapi()
 
     application.include_router(health_router)
     
