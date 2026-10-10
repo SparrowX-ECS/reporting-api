@@ -49,3 +49,15 @@ def test_reporting_api_exposes_its_health_contract() -> None:
 
     assert response.status_code == 200, response.text
     assert response.json() == {"status": "ok"}
+
+
+def test_routed_openapi_contains_reporting_routes() -> None:
+    with client() as api:
+        response = api.get("/api/reporting/openapi.json")
+
+    assert response.status_code == 200, response.text
+    paths = response.json()["paths"]
+    assert "/api/reporting/customers" in paths
+    assert "/api/reporting/tasks" in paths
+    assert "/api/reporting/billing" in paths
+    assert "/api/reporting/summary" in paths

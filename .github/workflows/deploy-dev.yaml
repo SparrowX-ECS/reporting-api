@@ -81,6 +81,7 @@ jobs:
     with:
       runtime: python
       base-url: ${{ vars.DEV_BASE_URL }}
+      api-spec-path: /api/reporting/openapi.json
 
   dev-quality-gate:
     name: Dev Quality Gate

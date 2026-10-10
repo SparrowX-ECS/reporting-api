@@ -5,12 +5,12 @@ sast:
   max_findings: 0
 
 image_scan:
-  max_critical: 10
-  max_high: 100
+  max_critical: 0
+  max_high: 60
 
 sbom:
   required: true
 
 dast:
-  max_high: 10
+  max_high: 0
   max_medium: 10

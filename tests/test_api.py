@@ -42,6 +42,7 @@ def test_health_docs_openapi_and_metrics_are_local_only(settings):
     assert request(app, "GET", "/health").json() == {"status": "ok"}
     assert request(app, "GET", "/docs").status_code == 200
     assert request(app, "GET", "/openapi.json").status_code == 200
+    assert request(app, "GET", "/api/reporting/openapi.json").json()["paths"] == request(app, "GET", "/openapi.json").json()["paths"]
     assert request(app, "GET", "/metrics").status_code == 200
 
 
